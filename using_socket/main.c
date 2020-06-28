@@ -51,8 +51,8 @@ void print_ip_hdr(struct iphdr ip) {
   printf("\tIdentification : %ld\n",ip.id);
   printf("\tTime to Live   : %ld\n",ip.ttl);
   printf("\tProtocol       : %ld\n",ip.protocol);
-  printf("\tSource  IP     : %s\n",inet_ntoa(*(struct in_addr*)&ip.daddr));
-  printf("\tDest.   IP     : %s\n",inet_ntoa(*(struct in_addr *)&ip.saddr));
+  printf("\tSource  IP     : %s\n",inet_ntoa(*(struct in_addr *)&ip.saddr));
+  printf("\tDest.   IP     : %s\n",inet_ntoa(*(struct in_addr*)&ip.daddr));
 }
 void process_igmp_hdr(char *packet,int count_byte) {}
 void process_icmp_hdr(struct icmphdr icmp) {
@@ -108,37 +108,79 @@ void process_tcp_hdr(struct tcphdr tcp) {
   printf("\tCheck   : %ld\n",ntohs(tcp.check));
   printf("\tUrgent Ptr.  : %ld\n",ntohs(tcp.urg_ptr));
 }
+void print_payload(unsigned char *payload,int size) {
+  for (int i =0 ; i<size ; i++) {
+    if(i%16==0 && i!=0) {
+      printf("\t");
+      for(int j=16;j>0;j--) {
+        if(*(payload+i-j)>=32 && *(payload+i-j)<=128) {
+          printf("%c ",(unsigned char)*(payload+i-j));
+        }
+        else {
+          printf(".");
+        }
+      }
+      printf("\n");
+    }
+    printf("%02X ",*(payload+i));
+    if(i==size-1) {
+      int k = i%16 ;
+      while(k!=16) {
+        printf("   ");
+        k++;
+      }
+      printf("\t");
+      for(int j=i%16;j>0;j--) {
+        if(*(payload+i-j)>=32 && *(payload+i-j)<=128) {
+          printf("%c ",(unsigned char)*(payload+i-j));
+        }
+        else {
+          printf(".");
+        }
+      }
+    }
+  }
+  printf("\n");
+}
 void process_packet(char *packet,int count_byte,time_t rawtime) {
   struct ethhdr eth;
   struct iphdr ip;
+  int IP_HLEN;
   memcpy(&eth,packet,sizeof(ETH_HLEN));
   memcpy(&ip,packet+ETH_HLEN,sizeof(struct iphdr));
   time_now(rawtime);
   print_ethernet_hdr(eth);
   print_ip_hdr(ip);
   if(ip.version ==4) {
+      IP_HLEN = ip.ihl*4 ;
       switch (ip.protocol) {
         case IPPROTO_ICMP : {
           struct icmphdr icmp;
-          memcpy(&icmp,packet+ETH_HLEN+ ip.ihl*4,sizeof(struct icmphdr));
+          memcpy(&icmp,packet+ETH_HLEN+IP_HLEN,sizeof(struct icmphdr));
           process_icmp_hdr(icmp);
           break;
         }
         case IPPROTO_IGMP : {
-
           process_igmp_hdr(&packet,count_byte);
           break;
         }
         case IPPROTO_UDP  : {
           struct udphdr udp;
-          memcpy(&udp,packet+ETH_HLEN+ ip.ihl*4,sizeof(struct udphdr));
+          memcpy(&udp,packet+ETH_HLEN+IP_HLEN,sizeof(struct udphdr));
           process_udp_hdr(udp);
           break;
         }
         case IPPROTO_TCP : {
-          /*struct tcphdr tcp;
-          memcpy(&tcp,packet+ETH_HLEN+ ip.ihl*4,sizeof(struct tcphdr));
-          process_tcp_hdr(tcp);*/
+          struct tcphdr tcp;
+          int TCP_HLEN;
+          memcpy(&tcp,packet+ETH_HLEN+IP_HLEN,sizeof(struct tcphdr));
+          process_tcp_hdr(tcp);
+          TCP_HLEN = tcp.doff*4 ;
+          const char *payload ;
+          payload = (u_char *)(packet+ETH_HLEN+IP_HLEN+TCP_HLEN);
+          int size ;
+          size = ntohs(ip.tot_len)-(IP_HLEN+TCP_HLEN) ;
+          print_payload(&payload,size);
           break;
         }
         default :
